@@ -1,4 +1,5 @@
 import math
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import yfinance as yf
@@ -60,7 +61,8 @@ data = yf.download(
     ticker,
     start=start_date,
     end=end_date,
-    auto_adjust=False
+    auto_adjust=False,
+    progress=False
 )
 
 prices_close = data["Close"].squeeze()
@@ -140,5 +142,6 @@ plt.legend(loc="upper right")
 plt.grid(alpha=0.3)
 
 plt.tight_layout()
+os.makedirs("images", exist_ok=True)
 plt.savefig("images/garch_var_close_vs_adj.png", dpi=300, bbox_inches="tight")
 plt.show()
