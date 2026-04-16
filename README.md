@@ -8,7 +8,7 @@
 
 This project analyzes JPMorgan (JPM) stock returns using a **GARCH(1,1)** model to estimate time-varying volatility and compute a **95% one-day Value at Risk (VaR)**.
 
-It demonstrates how volatility clustering impacts downside risk and evaluates model calibration using statistical backtesting techniques.
+It demonstrates how volatility clustering affects downside risk while evaluating model calibration through statistical backtesting techniques.
 
 ---
 
@@ -20,12 +20,16 @@ The goal is to model **dynamic market risk** in equity returns and evaluate whet
 
 Financial return series exhibit **volatility clustering**, where periods of high volatility are followed by high volatility and vice versa.
 
-GARCH models are specifically designed to capture this time-varying variance, making them widely used in:
-- Risk management
-- Derivatives pricing
-- Portfolio optimization
+## Why GARCH?
 
-This project uses GARCH(1,1) as a baseline model due to its strong empirical performance in financial time series.
+Financial returns exhibit **volatility clustering**, where large movements tend to be followed by large movements.
+
+GARCH models capture this time-varying variance and are widely used in:
+- Market risk management
+- Derivatives pricing
+- Portfolio risk analysis
+
+This project applies a GARCH(1,1) model due to its strong empirical performance and interpretability.
 
 ---
 
@@ -74,6 +78,8 @@ VaR_{t}^{95\%} = -1.65 \cdot \sigma_t
 
 ### Results
 
+## Results
+
 The figure below illustrates:
 - GARCH-estimated conditional volatility
 - 95% Value at Risk (VaR)
@@ -83,9 +89,9 @@ The figure below illustrates:
 ![VaR Backtest](images/var_backtest.png)
 
 ### Interpretation
-- Periods of elevated volatility (e.g., 2020) correspond to wider VaR bands
-- VaR breaches are relatively infrequent and clustered during stress periods
-- The frequency of breaches aligns closely with the expected 5% level, supporting model validity
+- Periods of elevated volatility (e.g., 2020) correspond to wider VaR thresholds
+- VaR breaches are infrequent and concentrated during stress periods
+- The observed breach frequency aligns closely with the expected 5%, supporting model calibration
 
 ---
 
