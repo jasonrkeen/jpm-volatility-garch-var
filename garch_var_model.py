@@ -83,11 +83,11 @@ returns_adj = np.log(prices_adj / prices_adj.shift(1)).dropna()
 # 3. Run both models
 # -----------------------------
 garch_close, var_close, ret_close, br_close, rate_close, kupiec_close = run_garch_var(
-    returns_close, "Log Returns using Close"
+    returns_close, "Log Returns Using Close"
 )
 
 garch_adj, var_adj, ret_adj, br_adj, rate_adj, kupiec_adj = run_garch_var(
-    returns_adj, "Log Returns using Adjusted Close"
+    returns_adj, "Log Returns Using Adjusted Close"
 )
 
 
@@ -96,9 +96,11 @@ garch_adj, var_adj, ret_adj, br_adj, rate_adj, kupiec_adj = run_garch_var(
 # -----------------------------
 plt.figure(figsize=(12, 10))
 
+# Close-based model
 plt.subplot(2, 1, 1)
-plt.plot(var_close, label="95% VaR (Close)")
-plt.plot(ret_close, label="Returns", alpha=0.4)
+plt.plot(var_close, label="95% VaR (Close)", color="blue")
+plt.plot(ret_close, label="Returns", alpha=0.4, color="orange")
+
 breach_points_close = ret_close[br_close]
 plt.scatter(
     breach_points_close.index,
@@ -109,13 +111,17 @@ plt.scatter(
     linewidth=0.5,
     label="VaR Breaches"
 )
+
 plt.title(f"Log Returns Using Close | Breach Rate: {rate_close:.2f}% | Kupiec: {kupiec_close:.2f}")
 plt.ylabel("Return / VaR")
-plt.legend()
+plt.legend(loc="upper right")
+plt.grid(alpha=0.3)
 
+# Adjusted-close-based model
 plt.subplot(2, 1, 2)
-plt.plot(var_adj, label="95% VaR (Adjusted Close)")
-plt.plot(ret_adj, label="Returns", alpha=0.4)
+plt.plot(var_adj, label="95% VaR (Adjusted Close)", color="blue")
+plt.plot(ret_adj, label="Returns", alpha=0.4, color="orange")
+
 breach_points_adj = ret_adj[br_adj]
 plt.scatter(
     breach_points_adj.index,
@@ -126,11 +132,13 @@ plt.scatter(
     linewidth=0.5,
     label="VaR Breaches"
 )
+
 plt.title(f"Log Returns Using Adjusted Close | Breach Rate: {rate_adj:.2f}% | Kupiec: {kupiec_adj:.2f}")
 plt.ylabel("Return / VaR")
 plt.xlabel("Date")
-plt.legend()
+plt.legend(loc="upper right")
+plt.grid(alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("images/close_vs_adjclose_comparison.png", dpi=300, bbox_inches="tight")
+plt.savefig("images/garch_var_close_vs_adj.png", dpi=300, bbox_inches="tight")
 plt.show()
