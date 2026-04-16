@@ -1,48 +1,136 @@
-# JPM Volatility and Value at Risk Modeling
+# JPM Volatility Modeling with GARCH and VaR
 
-This project analyzes JPMorgan (JPM) stock returns using a GARCH(1,1) model to estimate conditional volatility and 95% one-day Value at Risk (VaR).
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Status](https://img.shields.io/badge/Status-Complete-success)
+![Focus](https://img.shields.io/badge/Focus-Quantitative%20Finance-orange)
+
+## Overview
+
+This project analyzes JPMorgan (JPM) stock returns using a **GARCH(1,1)** model to estimate time-varying volatility and compute a **95% one-day Value at Risk (VaR)**.
+
+It demonstrates how volatility clustering impacts downside risk and validates the model using statistical backtesting.
+
+---
 
 ## Project Objective
-The goal of this project is to model time-varying market risk in JPMorgan equity returns and demonstrate how volatility clustering affects downside risk estimates.
 
-## Methods Used
-- Historical price retrieval with `yfinance`
-- Daily return calculation
-- GARCH(1,1) volatility modeling using the `arch` library
-- 95% one-day Value at Risk estimation
-- Data visualization with `matplotlib`
+The goal is to model **dynamic market risk** in equity returns and evaluate whether a volatility-based VaR model is properly calibrated.
+
+---
+
+## Methodology
+
+### Data
+
+* Historical price data retrieved using `yfinance`
+* Daily log returns computed from adjusted close prices
+
+### Modeling
+
+* GARCH(1,1) model fitted using the `arch` library
+* Conditional volatility estimated over time
+* VaR calculated as:
+
+[
+VaR_{95%} = -1.65 \cdot \sigma_t
+]
+
+### Backtesting
+
+* VaR breaches identified where actual returns fall below VaR
+* Kupiec Proportion of Failures test applied to evaluate model accuracy
+
+---
 
 ## Key Insights
-- Volatility spikes sharply during stressed market periods, especially in 2020.
-- Volatility demonstrates clustering, where high-volatility periods tend to persist.
-- Value at Risk becomes significantly more negative during periods of elevated volatility, indicating higher expected downside risk.
+
+* Volatility spikes significantly during stressed periods (e.g., 2020 market shock)
+* Volatility clustering is clearly visible over time
+* VaR becomes more negative during high-volatility regimes, indicating increased downside risk
+
+---
 
 ## Model Validation
 
-The model was evaluated using Value at Risk (VaR) backtesting and the Kupiec Proportion of Failures test.
+* Observed VaR breach rate: **4.14%**
+* Expected breach rate: **5.00%**
+* Kupiec LR statistic: **2.09**
+* Critical value (95%, df=1): **3.84**
 
-- Observed VaR breach rate: 4.14%
-- Expected breach rate (95% VaR): 5.00%
-- Kupiec test statistic: 2.09
-- Critical value (95%, df=1): 3.84
+**Result:** Fail to reject the null hypothesis → the VaR model is **well-calibrated**
 
-Result: Fail to reject the null hypothesis, indicating the VaR model is well-calibrated.
+---
 
 ## Results
 
-The chart below shows the GARCH-estimated volatility and the 95% Value at Risk backtest with breach points highlighted. Breaches occur when actual returns fall below the VaR threshold.
+The chart below shows:
+
+* GARCH conditional volatility
+* 95% VaR estimate
+* Actual returns
+* VaR breach points (highlighted)
 
 ![VaR Backtest](images/var_backtest.png)
 
-## Tools
-- Python
-- yfinance
-- matplotlib
-- pandas
-- numpy
-- arch
+---
+
+## Project Structure
+
+```
+jpm-volatility-garch-var/
+│
+├── garch_var_model.py      # Main modeling and analysis script
+├── requirements.txt       # Dependencies
+├── README.md              # Project documentation
+└── images/
+    └── var_backtest.png   # Output visualization
+```
+
+---
+
+## Tools & Libraries
+
+* Python
+* pandas
+* numpy
+* matplotlib
+* yfinance
+* arch
+
+---
 
 ## How to Run
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/jasonrkeen/jpm-volatility-garch-var.git
+cd jpm-volatility-garch-var
+```
+
+2. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Run the model:
+
+```bash
+python garch_var_model.py
+```
+
+---
+
+## Future Improvements
+
+* Add rolling-window VaR estimation
+* Compare with Historical Simulation VaR
+* Implement Conditional Coverage (Christoffersen) test
+* Extend to portfolio-level risk modeling
+
+---
+
+## Author
+
+Jason Keen
