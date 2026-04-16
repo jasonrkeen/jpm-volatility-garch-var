@@ -8,13 +8,24 @@
 
 This project analyzes JPMorgan (JPM) stock returns using a **GARCH(1,1)** model to estimate time-varying volatility and compute a **95% one-day Value at Risk (VaR)**.
 
-It demonstrates how volatility clustering impacts downside risk and validates the model using statistical backtesting.
+It demonstrates how volatility clustering impacts downside risk and evaluates model calibration using statistical backtesting techniques.
 
 ---
 
 ## Project Objective
 
 The goal is to model **dynamic market risk** in equity returns and evaluate whether a volatility-based VaR model is properly calibrated.
+
+## Why GARCH?
+
+Financial return series exhibit **volatility clustering**, where periods of high volatility are followed by high volatility and vice versa.
+
+GARCH models are specifically designed to capture this time-varying variance, making them widely used in:
+- Risk management
+- Derivatives pricing
+- Portfolio optimization
+
+This project uses GARCH(1,1) as a baseline model due to its strong empirical performance in financial time series.
 
 ---
 
@@ -31,9 +42,9 @@ The goal is to model **dynamic market risk** in equity returns and evaluate whet
 * Conditional volatility estimated over time
 * VaR calculated as:
 
-[
-VaR_{95%} = -1.65 \cdot \sigma_t
-]
+\[
+VaR_{t}^{95\%} = -1.65 \cdot \sigma_t
+\]
 
 ### Backtesting
 
@@ -61,16 +72,20 @@ VaR_{95%} = -1.65 \cdot \sigma_t
 
 ---
 
-## Results
+### Results
 
-The chart below shows:
-
-* GARCH conditional volatility
-* 95% VaR estimate
-* Actual returns
-* VaR breach points (highlighted)
+The figure below illustrates:
+- GARCH-estimated conditional volatility
+- 95% Value at Risk (VaR)
+- Actual returns
+- VaR breach points (highlighted in red)
 
 ![VaR Backtest](images/var_backtest.png)
+
+### Interpretation
+- Periods of elevated volatility (e.g., 2020) correspond to wider VaR bands
+- VaR breaches are relatively infrequent and clustered during stress periods
+- The frequency of breaches aligns closely with the expected 5% level, supporting model validity
 
 ---
 
