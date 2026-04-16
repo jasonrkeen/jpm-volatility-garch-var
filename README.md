@@ -270,8 +270,7 @@ jpm-volatility-garch-var/
 ## Tools & Libraries
 
 - Python  
-- pandas  
-- numpy  
+- pandas, numpy  
 - matplotlib  
 - yfinance  
 - arch  
