@@ -28,6 +28,12 @@ The model was evaluated using Value at Risk (VaR) backtesting and the Kupiec Pro
 
 Result: Fail to reject the null hypothesis, indicating the VaR model is well-calibrated.
 
+## Results
+
+The chart below shows the GARCH-estimated volatility and the 95% Value at Risk backtest with breach points highlighted. Breaches occur when actual returns fall below the VaR threshold.
+
+![VaR Backtest](images/var_backtest.png)
+
 ## Tools
 - Python
 - yfinance
