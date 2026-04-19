@@ -54,7 +54,7 @@ GARCH models estimate **time-varying volatility** in financial returns.
 A standard **GARCH(1,1)** model is defined as:
 
 \[
-\sigma_t^2 = \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2
+\σ²ₜ = ω + αε²ₜ₋₁ + βσ²ₜ₋₁
 \]
 
 - \( \alpha \): sensitivity to new shocks  
@@ -75,7 +75,7 @@ In this project:
 - There is a **5% probability that losses exceed this level**
 
 \[
-VaR_{t}^{95\%} = -1.65 \cdot \sigma_t
+VaRₜ (95%) = −1.65 × σₜ
 \]
 
 **What it means:**  
@@ -127,7 +127,7 @@ Accurate and consistent data is critical, as risk estimates are highly sensitive
 Daily **log returns** are computed:
 
 \[
-r_t = \ln\left(\frac{P_t}{P_{t-1}}\right)
+rₜ = ln(Pₜ / Pₜ₋₁)
 \]
 
 **What it does:**  
@@ -142,7 +142,7 @@ Log returns are time-additive and more appropriate for financial modeling, parti
 A **GARCH(1,1)** model is used to estimate time-varying volatility:
 
 \[
-\sigma_t^2 = \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2
+\σ²ₜ = ω + αε²ₜ₋₁ + βσ²ₜ₋₁
 \]
 
 **What it does:**  
@@ -159,7 +159,7 @@ This time-varying volatility serves as the foundation for calculating **Value at
 VaR is calculated using conditional volatility:
 
 \[
-VaR_t^{95\%} = -1.65 \cdot \sigma_t
+VaRₜ (95%) = −1.65 × σₜ
 \]
 
 **What it does:**  
@@ -212,7 +212,7 @@ Backtesting provides a direct link between **model predictions and real-world pe
 The Kupiec test evaluates whether the observed breach rate matches the expected rate:
 
 \[
-LR_{uc} = -2 \ln \left( \frac{(1-p)^{n-x} p^x}{(1-\hat{p})^{n-x} \hat{p}^x} \right)
+LR_uc = −2 ln [ ((1 − p)^(n − x) · p^x) / ((1 − p̂)^(n − x) · p̂^x) ]
 \]
 
 **What it measures:**  
