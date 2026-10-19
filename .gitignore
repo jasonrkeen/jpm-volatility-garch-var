@@ -19,3 +19,6 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# Generated model outputs
+outputs/

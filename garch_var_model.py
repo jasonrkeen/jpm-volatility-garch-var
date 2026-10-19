@@ -1,230 +1,264 @@
+"""Past-only one-day VaR backtests; importing this module never downloads data."""
 import math
 import os
+import hashlib
+import json
+import platform
+from datetime import datetime, timezone
+from importlib.metadata import version
+from pathlib import Path
+from statistics import NormalDist
+
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import yfinance as yf
 from arch import arch_model
 
 
-def run_garch_var(returns, label):
-    returns_pct = returns * 100
+def validate_returns(returns, window):
+    if not isinstance(window, int) or isinstance(window, bool) or window < 2:
+        raise ValueError("window must be an integer of at least 2")
+    if not isinstance(returns, pd.Series) or len(returns) <= window:
+        raise ValueError("A return Series longer than the training window is required")
+    if not returns.index.is_unique or not returns.index.is_monotonic_increasing:
+        raise ValueError("Returns must have a unique, increasing index")
+    if not np.isfinite(returns.to_numpy(dtype=float)).all():
+        raise ValueError("Returns must be finite; resolve missing data before backtesting")
+    return returns.astype(float) * 100
 
-    model = arch_model(returns_pct, vol="Garch", p=1, q=1)
-    results = model.fit(disp="off")
 
-    garch_vol = results.conditional_volatility
-    var_95 = -1.65 * garch_vol
+def kupiec_lr(num_breaches, num_obs, probability=0.05):
+    """Unconditional coverage LR, including the finite boundary likelihoods."""
+    if num_obs <= 0 or not 0 <= num_breaches <= num_obs or not 0 < probability < 1:
+        raise ValueError("Invalid breach counts or probability")
+    x, n = num_breaches, num_obs
+    pi_hat = x / n
+    null = (n - x) * math.log1p(-probability) + x * math.log(probability)
+    alternative = 0.0
+    if x:
+        alternative += x * math.log(pi_hat)
+    if n - x:
+        alternative += (n - x) * math.log1p(-pi_hat)
+    return max(0.0, -2 * (null - alternative))
 
-    returns_aligned, var_aligned = returns_pct.align(var_95, join="inner", axis=0)
 
-    breaches = returns_aligned < var_aligned
-    num_breaches = int(breaches.sum())
-    num_obs = len(returns_aligned)
-    breach_rate = (num_breaches / num_obs) * 100
-
-    x = num_breaches
-    n = num_obs
-    p = 0.05
-
-    if x == 0 or x == n:
-        kupiec_lr = float("inf")
-        kupiec_result = "Reject model adequacy (edge-case breach count)."
-    else:
-        pi_hat = x / n
-        log_l_null = (n - x) * math.log(1 - p) + x * math.log(p)
-        log_l_alt = (n - x) * math.log(1 - pi_hat) + x * math.log(pi_hat)
-        kupiec_lr = -2 * (log_l_null - log_l_alt)
-
-        if kupiec_lr > 3.841:
-            kupiec_result = "Reject the VaR model at the 5% level."
-        else:
-            kupiec_result = "Fail to reject the VaR model at the 5% level."
-
+def evaluate(returns_pct, thresholds, label):
+    actual = returns_pct.loc[thresholds.index]
+    if thresholds.empty or not np.isfinite(thresholds.to_numpy()).all():
+        raise ValueError("No complete, finite forecasts to evaluate")
+    breaches = actual < thresholds
+    rate = 100 * float(breaches.mean())
+    lr = kupiec_lr(int(breaches.sum()), len(breaches))
+    decision = "Reject" if lr > 3.841458820694124 else "Fail to reject"
     print(f"\n--- {label} ---")
-    print(f"Total observations: {num_obs}")
-    print(f"Number of breaches: {num_breaches}")
-    print(f"Breach rate: {breach_rate:.2f}%")
-    print(f"Kupiec LR statistic: {kupiec_lr:.4f}")
-    print(kupiec_result)
+    print(f"Out-of-sample observations: {len(actual)}")
+    print(f"Breach rate: {rate:.2f}% | Kupiec LR: {lr:.4f}")
+    print(f"{decision} nominal 5% unconditional coverage at the 5% level.")
+    print("Non-rejection does not establish model validity or breach independence.")
+    return thresholds, actual, breaches, rate, lr
 
-    return garch_vol, var_aligned, returns_aligned, breaches, breach_rate, kupiec_lr
+
+def run_garch_var(returns, label, window=250):
+    """Refit on the prior window for each target; forecast its return quantile."""
+    returns_pct = validate_returns(returns, window)
+    target_index = returns_pct.index[window:]
+    volatilities, thresholds = [], []
+    for target in range(window, len(returns_pct)):
+        training = returns_pct.iloc[target - window:target]
+        if training.var() <= 0:
+            raise ValueError("GARCH requires a nonconstant training window")
+        model = arch_model(training, mean="Constant", vol="Garch", p=1, q=1,
+                           dist="normal", rescale=False)
+        fitted = model.fit(disp="off")
+        if fitted.convergence_flag != 0:
+            raise RuntimeError(f"GARCH fit did not converge for {returns_pct.index[target]}")
+        forecast = fitted.forecast(horizon=1, reindex=False)
+        mean = float(forecast.mean.iloc[-1, 0])
+        variance = float(forecast.variance.iloc[-1, 0])
+        if not math.isfinite(mean) or not math.isfinite(variance) or variance <= 0:
+            raise RuntimeError("GARCH returned an invalid forecast")
+        sigma = math.sqrt(variance)
+        volatilities.append(sigma)
+        thresholds.append(mean + NormalDist().inv_cdf(0.05) * sigma)
+    volatility = pd.Series(volatilities, index=target_index, name="forecast_volatility_pct")
+    threshold = pd.Series(thresholds, index=target_index, name="garch_threshold_pct")
+    return (volatility, *evaluate(returns_pct, threshold, label))
+
 
 def run_historical_var(returns, label, window=250):
-    returns_pct = returns * 100
+    """The target observation never contributes to its own threshold."""
+    returns_pct = validate_returns(returns, window)
+    threshold = returns_pct.rolling(window=window).quantile(0.05).shift(1).iloc[window:]
+    return evaluate(returns_pct, threshold, label)
 
-    hist_var_95 = returns_pct.rolling(window=window).quantile(0.05)
-    returns_aligned, var_aligned = returns_pct.align(hist_var_95, join="inner", axis=0)
-    valid = var_aligned.notna()
 
-    returns_aligned = returns_aligned[valid]
-    var_aligned = var_aligned[valid]
+def main():
+    # -----------------------------
+    # 1. Download historical data
+    # -----------------------------
+    ticker = "JPM"
+    start_date = "2020-01-01"
+    end_date = "2025-01-01"
 
-    breaches = returns_aligned < var_aligned
-    num_breaches = int(breaches.sum())
-    num_obs = len(returns_aligned)
-    breach_rate = (num_breaches / num_obs) * 100
+    data = yf.download(
+        ticker,
+        start=start_date,
+        end=end_date,
+        auto_adjust=False,
+        progress=False
+    )
 
-    x = num_breaches
-    n = num_obs
-    p = 0.05
+    prices_close = data["Close"].squeeze()
 
-    if x == 0 or x == n:
-        kupiec_lr = float("inf")
-        kupiec_result = "Reject model adequacy (edge-case breach count)."
+    if "Adj Close" in data.columns:
+        prices_adj = data["Adj Close"].squeeze()
     else:
-        pi_hat = x / n
-        log_l_null = (n - x) * math.log(1 - p) + x * math.log(p)
-        log_l_alt = (n - x) * math.log(1 - pi_hat) + x * math.log(pi_hat)
-        kupiec_lr = -2 * (log_l_null - log_l_alt)
+        raise ValueError("Adjusted Close is unavailable; refusing a mislabeled comparison.")
 
-        if kupiec_lr > 3.841:
-            kupiec_result = "Reject the VaR model at the 5% level."
-        else:
-            kupiec_result = "Fail to reject the VaR model at the 5% level."
-
-    print(f"\n--- {label} ---")
-    print(f"Rolling window: {window} days")
-    print(f"Total observations: {num_obs}")
-    print(f"Number of breaches: {num_breaches}")
-    print(f"Breach rate: {breach_rate:.2f}%")
-    print(f"Kupiec LR statistic: {kupiec_lr:.4f}")
-    print(kupiec_result)
-
-    return var_aligned, returns_aligned, breaches, breach_rate, kupiec_lr
-
-# -----------------------------
-# 1. Download historical data
-# -----------------------------
-ticker = "JPM"
-start_date = "2020-01-01"
-end_date = "2025-01-01"
-
-data = yf.download(
-    ticker,
-    start=start_date,
-    end=end_date,
-    auto_adjust=False,
-    progress=False
-)
-
-prices_close = data["Close"].squeeze()
-
-if "Adj Close" in data.columns:
-    prices_adj = data["Adj Close"].squeeze()
-else:
-    prices_adj = prices_close.copy()
-    print("Adj Close not found; using Close instead.")
+    os.makedirs("outputs", exist_ok=True)
+    snapshot = Path("outputs/price_snapshot.csv")
+    pd.DataFrame({"Close": prices_close, "Adj Close": prices_adj}).to_csv(snapshot, index_label="date")
+    manifest = {
+        "status": "started",
+        "retrieved_at_utc": datetime.now(timezone.utc).isoformat(),
+        "ticker": ticker, "start": start_date, "end_exclusive": end_date,
+        "training_window": 250, "python": platform.python_version(),
+        "packages": {name: version(name) for name in ["numpy", "pandas", "arch", "yfinance", "matplotlib"]},
+        "price_snapshot_sha256": hashlib.sha256(snapshot.read_bytes()).hexdigest(),
+        "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "data_boundary": "Current download; not an authenticated historical point-in-time vintage",
+    }
+    Path("outputs/run_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
-# -----------------------------
-# 2. Compute log returns
-# -----------------------------
-returns_close = np.log(prices_close / prices_close.shift(1)).dropna()
-returns_adj = np.log(prices_adj / prices_adj.shift(1)).dropna()
+    # -----------------------------
+    # 2. Compute log returns
+    # -----------------------------
+    returns_close = np.log(prices_close / prices_close.shift(1)).dropna()
+    returns_adj = np.log(prices_adj / prices_adj.shift(1)).dropna()
 
 
-# -----------------------------
-# 3. Run both models
-# -----------------------------
-garch_close, var_close, ret_close, br_close, rate_close, kupiec_close = run_garch_var(
-    returns_close, "Log Returns Using Close"
-)
+    # -----------------------------
+    # 3. Run both models
+    # -----------------------------
+    garch_close, var_close, ret_close, br_close, rate_close, kupiec_close = run_garch_var(
+        returns_close, "Log Returns Using Close"
+    )
 
-garch_adj, var_adj, ret_adj, br_adj, rate_adj, kupiec_adj = run_garch_var(
-    returns_adj, "Log Returns Using Adjusted Close"
-)
+    garch_adj, var_adj, ret_adj, br_adj, rate_adj, kupiec_adj = run_garch_var(
+        returns_adj, "Log Returns Using Adjusted Close"
+    )
 
-hist_var_close, hist_ret_close, hist_br_close, hist_rate_close, hist_kupiec_close = run_historical_var(
-    returns_close, "Historical Simulation VaR Using Close", window=250
-)
+    hist_var_close, hist_ret_close, hist_br_close, hist_rate_close, hist_kupiec_close = run_historical_var(
+        returns_close, "Historical Simulation VaR Using Close", window=250
+    )
 
-hist_var_adj, hist_ret_adj, hist_br_adj, hist_rate_adj, hist_kupiec_adj = run_historical_var(
-    returns_adj, "Historical Simulation VaR Using Adjusted Close", window=250
-)
+    hist_var_adj, hist_ret_adj, hist_br_adj, hist_rate_adj, hist_kupiec_adj = run_historical_var(
+        returns_adj, "Historical Simulation VaR Using Adjusted Close", window=250
+    )
 
-# -----------------------------
-# 4. Plot comparison
-# -----------------------------
-plt.figure(figsize=(12, 10))
+    # -----------------------------
+    # 4. Plot comparison
+    # -----------------------------
+    plt.figure(figsize=(12, 10))
 
-# -----------------------------
-# Close-based comparison
-# -----------------------------
-plt.subplot(2, 1, 1)
+    # -----------------------------
+    # Close-based comparison
+    # -----------------------------
+    plt.subplot(2, 1, 1)
 
-plt.plot(var_close, label="95% GARCH VaR (Close)", color="blue")
-plt.plot(hist_var_close, label="95% Historical VaR (Close)", color="green", linestyle="--")
-plt.plot(ret_close, label="Returns", alpha=0.4, color="orange")
+    plt.plot(var_close, label="95% GARCH VaR (Close)", color="blue")
+    plt.plot(hist_var_close, label="95% Historical VaR (Close)", color="green", linestyle="--")
+    plt.plot(ret_close, label="Returns", alpha=0.4, color="orange")
 
-breach_points_garch_close = ret_close[br_close]
-plt.scatter(
-    breach_points_garch_close.index,
-    breach_points_garch_close.values,
-    color="red",
-    s=35,
-    edgecolor="black",
-    linewidth=0.5,
-    label="GARCH Breaches"
-)
+    breach_points_garch_close = ret_close[br_close]
+    plt.scatter(
+        breach_points_garch_close.index,
+        breach_points_garch_close.values,
+        color="red",
+        s=35,
+        edgecolor="black",
+        linewidth=0.5,
+        label="GARCH Breaches"
+    )
 
-breach_points_hist_close = hist_ret_close[hist_br_close]
-plt.scatter(
-    breach_points_hist_close.index,
-    breach_points_hist_close.values,
-    color="purple",
-    s=30,
-    edgecolor="black",
-    linewidth=0.5,
-    label="Historical Breaches"
-)
+    breach_points_hist_close = hist_ret_close[hist_br_close]
+    plt.scatter(
+        breach_points_hist_close.index,
+        breach_points_hist_close.values,
+        color="purple",
+        s=30,
+        edgecolor="black",
+        linewidth=0.5,
+        label="Historical Breaches"
+    )
 
-plt.title(
-    f"Close Prices | GARCH Breach Rate: {rate_close:.2f}% | Hist Breach Rate: {hist_rate_close:.2f}%"
-)
-plt.ylabel("Return / VaR")
-plt.legend(loc="upper right")
-plt.grid(alpha=0.3)
+    plt.title(
+        f"Close Prices | GARCH Breach Rate: {rate_close:.2f}% | Hist Breach Rate: {hist_rate_close:.2f}%"
+    )
+    plt.ylabel("Return / VaR")
+    plt.legend(loc="upper right")
+    plt.grid(alpha=0.3)
 
-# -----------------------------
-# Adjusted-close-based comparison
-# -----------------------------
-plt.subplot(2, 1, 2)
+    # -----------------------------
+    # Adjusted-close-based comparison
+    # -----------------------------
+    plt.subplot(2, 1, 2)
 
-plt.plot(var_adj, label="95% GARCH VaR (Adjusted Close)", color="blue")
-plt.plot(hist_var_adj, label="95% Historical VaR (Adjusted Close)", color="green", linestyle="--")
-plt.plot(ret_adj, label="Returns", alpha=0.4, color="orange")
+    plt.plot(var_adj, label="95% GARCH VaR (Adjusted Close)", color="blue")
+    plt.plot(hist_var_adj, label="95% Historical VaR (Adjusted Close)", color="green", linestyle="--")
+    plt.plot(ret_adj, label="Returns", alpha=0.4, color="orange")
 
-breach_points_garch_adj = ret_adj[br_adj]
-plt.scatter(
-    breach_points_garch_adj.index,
-    breach_points_garch_adj.values,
-    color="red",
-    s=35,
-    edgecolor="black",
-    linewidth=0.5,
-    label="GARCH Breaches"
-)
+    breach_points_garch_adj = ret_adj[br_adj]
+    plt.scatter(
+        breach_points_garch_adj.index,
+        breach_points_garch_adj.values,
+        color="red",
+        s=35,
+        edgecolor="black",
+        linewidth=0.5,
+        label="GARCH Breaches"
+    )
 
-breach_points_hist_adj = hist_ret_adj[hist_br_adj]
-plt.scatter(
-    breach_points_hist_adj.index,
-    breach_points_hist_adj.values,
-    color="purple",
-    s=30,
-    edgecolor="black",
-    linewidth=0.5,
-    label="Historical Breaches"
-)
+    breach_points_hist_adj = hist_ret_adj[hist_br_adj]
+    plt.scatter(
+        breach_points_hist_adj.index,
+        breach_points_hist_adj.values,
+        color="purple",
+        s=30,
+        edgecolor="black",
+        linewidth=0.5,
+        label="Historical Breaches"
+    )
 
-plt.title(
-    f"Adjusted Close Prices | GARCH Breach Rate: {rate_adj:.2f}% | Hist Breach Rate: {hist_rate_adj:.2f}%"
-)
-plt.ylabel("Return / VaR")
-plt.xlabel("Date")
-plt.legend(loc="upper right")
-plt.grid(alpha=0.3)
+    plt.title(
+        f"Adjusted Close Prices | GARCH Breach Rate: {rate_adj:.2f}% | Hist Breach Rate: {hist_rate_adj:.2f}%"
+    )
+    plt.ylabel("Return / VaR")
+    plt.xlabel("Date")
+    plt.legend(loc="upper right")
+    plt.grid(alpha=0.3)
 
-plt.tight_layout()
-os.makedirs("images", exist_ok=True)
-plt.savefig("images/garch_vs_historical_var.png", dpi=300, bbox_inches="tight")
-plt.show()
+    plt.tight_layout()
+    os.makedirs("outputs", exist_ok=True)
+    plt.savefig("outputs/garch_vs_historical_var.png", dpi=300, bbox_inches="tight")
+    for name, actual, garch, historical in [
+        ("close", ret_close, var_close, hist_var_close),
+        ("adjusted_close", ret_adj, var_adj, hist_var_adj),
+    ]:
+        pd.DataFrame({"return_pct": actual, "garch_threshold_pct": garch,
+                      "historical_threshold_pct": historical}).to_csv(
+            f"outputs/{name}_backtest.csv", index_label="date")
+    manifest["status"] = "complete"
+    manifest["completed_at_utc"] = datetime.now(timezone.utc).isoformat()
+    manifest["output_sha256"] = {
+        name: hashlib.sha256(Path("outputs", name).read_bytes()).hexdigest()
+        for name in ["close_backtest.csv", "adjusted_close_backtest.csv", "garch_vs_historical_var.png"]
+    }
+    Path("outputs/run_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    if "agg" != plt.get_backend().lower():
+        plt.show()
+
+if __name__ == "__main__":
+    main()
